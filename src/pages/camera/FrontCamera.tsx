@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useCamera } from '../../hooks/useCamera';
-import { Camera, CheckCircle2, AlertCircle, RefreshCw, Bell, Search, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { AlertCircle, RefreshCw, Bell, Search, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 
 const attendanceHistory = [
     { name: 'Aditiya R.', id: 'WK-018', date: '2026-02-07', checkIn: '08:01', checkOut: '17:12', status: 'Tepat Waktu', similarity: '98.5%' },
@@ -19,12 +19,38 @@ const realtimeNotifications = [
 ];
 
 export default function FrontCamera() {
-    const constraints = useMemo<MediaStreamConstraints>(() => ({
-        video: { facingMode: 'user' }
-    }), []);
-    const { videoRef, startCamera, stopCamera, captureImage, error, isActive } = useCamera(constraints);
-    const [lastCapture, setLastCapture] = useState<string | null>(null);
-    const [status, setStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
+    const resolutionOptions = [
+        { label: '480p', width: 640, height: 480 },
+        { label: '720p', width: 1280, height: 720 },
+        { label: '1080p', width: 1920, height: 1080 }
+    ];
+    const [frontResolution, setFrontResolution] = useState(resolutionOptions[1]);
+    const [backResolution, setBackResolution] = useState(resolutionOptions[1]);
+    const [syncCapture, setSyncCapture] = useState(true);
+    const frontConstraints = useMemo<MediaStreamConstraints>(() => ({
+        video: { facingMode: 'user', width: { ideal: frontResolution.width }, height: { ideal: frontResolution.height } }
+    }), [frontResolution]);
+    const backConstraints = useMemo<MediaStreamConstraints>(() => ({
+        video: { facingMode: 'environment', width: { ideal: backResolution.width }, height: { ideal: backResolution.height } }
+    }), [backResolution]);
+    const {
+        videoRef: frontVideoRef,
+        startCamera: startFrontCamera,
+        stopCamera: stopFrontCamera,
+        captureImage: captureFrontImage,
+        error: frontError,
+        isActive: frontIsActive
+    } = useCamera(frontConstraints);
+    const {
+        videoRef: backVideoRef,
+        startCamera: startBackCamera,
+        stopCamera: stopBackCamera,
+        captureImage: captureBackImage,
+        error: backError,
+        isActive: backIsActive
+    } = useCamera(backConstraints);
+    const [frontCapture, setFrontCapture] = useState<string | null>(null);
+    const [backCapture, setBackCapture] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('Semua');
     const [sortKey, setSortKey] = useState('Terbaru');
@@ -32,20 +58,40 @@ export default function FrontCamera() {
     const [actionMessage, setActionMessage] = useState<string | null>(null);
 
     useEffect(() => {
-        startCamera();
-        return () => stopCamera();
-    }, [startCamera, stopCamera]);
+        stopFrontCamera();
+        startFrontCamera();
+    }, [startFrontCamera, stopFrontCamera, frontResolution]);
 
-    const handleCapture = () => {
-        const image = captureImage();
+    useEffect(() => {
+        stopBackCamera();
+        startBackCamera();
+    }, [startBackCamera, stopBackCamera, backResolution]);
+
+    const handleCaptureFront = () => {
+        const image = captureFrontImage();
         if (image) {
-            setLastCapture(image);
-            setStatus('scanning');
-            // Simulate API call
-            setTimeout(() => {
-                setStatus('success');
-                setActionMessage('Absensi otomatis tercatat untuk Aditiya R.');
-            }, 1500);
+            setFrontCapture(image);
+            setActionMessage('Capture kamera depan tersimpan.');
+        }
+        if (syncCapture) {
+            const backImage = captureBackImage();
+            if (backImage) {
+                setBackCapture(backImage);
+            }
+        }
+    };
+
+    const handleCaptureBack = () => {
+        const image = captureBackImage();
+        if (image) {
+            setBackCapture(image);
+            setActionMessage('Capture kamera belakang tersimpan.');
+        }
+        if (syncCapture) {
+            const frontImage = captureFrontImage();
+            if (frontImage) {
+                setFrontCapture(frontImage);
+            }
         }
     };
 
@@ -85,19 +131,14 @@ export default function FrontCamera() {
                     <h1 className="text-2xl font-bold text-gray-900">Face Attendance</h1>
                     <p className="text-gray-500">AI face scan untuk absensi tepat waktu, terlambat, dan tidak hadir</p>
                 </div>
-                <div className={`px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 ${isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                    <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                    {isActive ? 'Camera Active' : 'Camera Offline'}
-                </div>
+                <button
+                    onClick={() => setSyncCapture((prev) => !prev)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold border ${syncCapture ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                    title="Sync Capture"
+                >
+                    {syncCapture ? 'Sync Capture: On' : 'Sync Capture: Off'}
+                </button>
             </div>
-
-            {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3">
-                    <AlertCircle size={20} />
-                    {error}
-                </div>
-            )}
 
             {actionMessage && (
                 <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 px-4 py-3 rounded-xl text-sm font-medium">
@@ -122,98 +163,177 @@ export default function FrontCamera() {
                 ))}
             </div>
 
-            <div className="grid lg:grid-cols-2 gap-8">
-                <div className="relative bg-black rounded-3xl overflow-hidden shadow-xl aspect-video relative group">
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover transform scale-x-[-1]"
-                    />
-
-                    <div className="absolute inset-0 border-2 border-white/20 rounded-3xl m-8 pointer-events-none">
-                        <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary-500 rounded-tl-xl border-white/50"></div>
-                        <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary-500 rounded-tr-xl border-white/50"></div>
-                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary-500 rounded-bl-xl border-white/50"></div>
-                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary-500 rounded-br-xl border-white/50"></div>
+            <div className="grid lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-900">Front Camera</h3>
+                            <p className="text-xs text-gray-500">Facing user</p>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-semibold ${frontIsActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {frontIsActive ? 'Active' : 'Offline'}
+                        </div>
                     </div>
 
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
+                    {frontError && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3 text-sm">
+                            <AlertCircle size={18} />
+                            {frontError}
+                            <button onClick={startFrontCamera} className="ml-auto px-3 py-1 rounded-md bg-red-600 text-white text-xs">Retry</button>
+                        </div>
+                    )}
+
+                    <div className="relative bg-black rounded-2xl overflow-hidden aspect-video">
+                        <video
+                            ref={frontVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover transform scale-x-[-1]"
+                        />
+                        <div className="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-white/90 text-gray-800">
+                            FRONT
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Resolution</span>
+                            <select
+                                value={frontResolution.label}
+                                onChange={(event) => {
+                                    const next = resolutionOptions.find(option => option.label === event.target.value);
+                                    if (next) setFrontResolution(next);
+                                }}
+                                className="px-3 py-2 rounded-xl border border-gray-200 text-sm"
+                            >
+                                {resolutionOptions.map(option => (
+                                    <option key={option.label} value={option.label}>{option.label}</option>
+                                ))}
+                            </select>
+                        </div>
                         <button
-                            onClick={handleCapture}
-                            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all text-primary-600 hover:text-primary-700"
+                            onClick={handleCaptureFront}
+                            className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition"
                         >
-                            <Camera size={32} />
+                            Capture Front
                         </button>
+                    </div>
+
+                    <div className="bg-gray-50 rounded-2xl p-3 border border-dashed border-gray-200">
+                        {frontCapture ? (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-sm text-gray-600">
+                                    <span>Preview</span>
+                                    <button onClick={() => setFrontCapture(null)} className="text-gray-400 hover:text-gray-600">
+                                        <RefreshCw size={14} />
+                                    </button>
+                                </div>
+                                <img src={frontCapture} alt="Front capture" className="w-full rounded-xl border" />
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-400 text-center py-6">Belum ada preview kamera depan.</p>
+                        )}
                     </div>
                 </div>
 
-                <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <h3 className="font-semibold text-gray-800 mb-4">Detection Status</h3>
-
-                        {status === 'idle' && (
-                            <div className="text-center py-8 text-gray-400">
-                                <Camera size={48} className="mx-auto mb-3 opacity-50" />
-                                <p>Ready to scan</p>
-                            </div>
-                        )}
-
-                        {status === 'scanning' && (
-                            <div className="text-center py-8">
-                                <div className="inline-block w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-                                <p className="text-primary-600 font-medium">Verifying face...</p>
-                            </div>
-                        )}
-
-                        {status === 'success' && (
-                            <div className="text-center py-6 bg-green-50 rounded-xl border border-green-100">
-                                <CheckCircle2 size={48} className="mx-auto mb-2 text-green-500" />
-                                <h4 className="font-bold text-gray-900 text-lg">Verified!</h4>
-                                <p className="text-green-700">Similarity: 98.5%</p>
-                                <p className="text-sm text-gray-500 mt-1">Verified as: Aditiya R.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="font-semibold text-gray-800">Real-time Notifications</h3>
-                            <button
-                                onClick={() => setActionMessage('Semua notifikasi ditandai sebagai dibaca.')}
-                                className="text-sm text-primary-600 hover:text-primary-700 transition"
-                            >
-                                Tandai semua
-                            </button>
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-900">Back Camera</h3>
+                            <p className="text-xs text-gray-500">Facing environment</p>
                         </div>
-                        <div className="space-y-3">
-                            {realtimeNotifications.map((item) => (
-                                <div key={item.title} className="flex items-start gap-3 rounded-xl border border-gray-100 p-3">
-                                    <div className="w-9 h-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">
-                                        <Bell size={16} />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-semibold text-gray-900">{item.title}</p>
-                                        <p className="text-xs text-gray-500">{item.detail}</p>
-                                        <p className="text-xs text-gray-400 mt-1">{item.time}</p>
-                                    </div>
-                                </div>
-                            ))}
+                        <div className={`px-3 py-1 rounded-full text-xs font-semibold ${backIsActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {backIsActive ? 'Active' : 'Offline'}
                         </div>
                     </div>
 
-                    {lastCapture && (
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-semibold text-gray-800">Last Capture</h3>
-                                <button onClick={() => setLastCapture(null)} className="text-gray-400 hover:text-gray-600">
-                                    <RefreshCw size={16} />
-                                </button>
-                            </div>
-                            <img src={lastCapture} alt="Capture" className="w-full rounded-xl border" />
+                    {backError && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3 text-sm">
+                            <AlertCircle size={18} />
+                            {backError}
+                            <button onClick={startBackCamera} className="ml-auto px-3 py-1 rounded-md bg-red-600 text-white text-xs">Retry</button>
                         </div>
                     )}
+
+                    <div className="relative bg-black rounded-2xl overflow-hidden aspect-video">
+                        <video
+                            ref={backVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover"
+                        />
+                        <div className="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-white/90 text-gray-800">
+                            BACK
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Resolution</span>
+                            <select
+                                value={backResolution.label}
+                                onChange={(event) => {
+                                    const next = resolutionOptions.find(option => option.label === event.target.value);
+                                    if (next) setBackResolution(next);
+                                }}
+                                className="px-3 py-2 rounded-xl border border-gray-200 text-sm"
+                            >
+                                {resolutionOptions.map(option => (
+                                    <option key={option.label} value={option.label}>{option.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <button
+                            onClick={handleCaptureBack}
+                            className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition"
+                        >
+                            Capture Back
+                        </button>
+                    </div>
+
+                    <div className="bg-gray-50 rounded-2xl p-3 border border-dashed border-gray-200">
+                        {backCapture ? (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-sm text-gray-600">
+                                    <span>Preview</span>
+                                    <button onClick={() => setBackCapture(null)} className="text-gray-400 hover:text-gray-600">
+                                        <RefreshCw size={14} />
+                                    </button>
+                                </div>
+                                <img src={backCapture} alt="Back capture" className="w-full rounded-xl border" />
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-400 text-center py-6">Belum ada preview kamera belakang.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-800">Real-time Notifications</h3>
+                    <button
+                        onClick={() => setActionMessage('Semua notifikasi ditandai sebagai dibaca.')}
+                        className="text-sm text-primary-600 hover:text-primary-700 transition"
+                    >
+                        Tandai semua
+                    </button>
+                </div>
+                <div className="space-y-3">
+                    {realtimeNotifications.map((item) => (
+                        <div key={item.title} className="flex items-start gap-3 rounded-xl border border-gray-100 p-3">
+                            <div className="w-9 h-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">
+                                <Bell size={16} />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                                <p className="text-xs text-gray-500">{item.detail}</p>
+                                <p className="text-xs text-gray-400 mt-1">{item.time}</p>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 

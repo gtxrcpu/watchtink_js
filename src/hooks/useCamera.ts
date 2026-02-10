@@ -8,6 +8,11 @@ export function useCamera(constraints: MediaStreamConstraints = { video: true })
     const [isActive, setIsActive] = useState(false);
 
     const startCamera = useCallback(async () => {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            setError('Kamera tidak didukung pada perangkat ini.');
+            setIsActive(false);
+            return;
+        }
         if (streamRef.current) {
             if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
                 videoRef.current.srcObject = streamRef.current;
@@ -25,7 +30,14 @@ export function useCamera(constraints: MediaStreamConstraints = { video: true })
             setIsActive(true);
             setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to access camera');
+            const message = err instanceof DOMException
+                ? err.name === 'NotAllowedError'
+                    ? 'Izin kamera ditolak. Aktifkan akses kamera di browser.'
+                    : err.name === 'NotFoundError'
+                        ? 'Kamera tidak ditemukan. Pastikan perangkat memiliki kamera.'
+                        : 'Gagal mengakses kamera. Coba refresh halaman.'
+                : 'Gagal mengakses kamera. Coba refresh halaman.';
+            setError(message);
             setIsActive(false);
         }
     }, [constraints]);
@@ -37,6 +49,9 @@ export function useCamera(constraints: MediaStreamConstraints = { video: true })
         }
         streamRef.current = null;
         setStream(null);
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
         setIsActive(false);
     }, []);
 

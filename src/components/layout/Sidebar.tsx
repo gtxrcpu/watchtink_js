@@ -1,16 +1,22 @@
 
+import { useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Camera, Brain, HeartPulse, ClipboardList, BarChart3, User } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export default function Sidebar() {
+    const userRole = useMemo(() => {
+        if (typeof window === 'undefined') return 'admin';
+        return localStorage.getItem('role') || 'admin';
+    }, []);
+    const canViewRecap = userRole === 'admin' || userRole === 'atasan';
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { icon: Camera, label: 'Face Scan', path: '/camera/front' },
         { icon: Brain, label: 'Mental Health', path: '/mental-health' },
         { icon: HeartPulse, label: 'Physical Health', path: '/physical-health' },
         { icon: ClipboardList, label: 'Attendance', path: '/attendance' },
-        { icon: BarChart3, label: 'Recap', path: '/recap' },
+        ...(canViewRecap ? [{ icon: BarChart3, label: 'Rekapitulasi Absensi', path: '/recap' }] : []),
     ];
 
     return (
